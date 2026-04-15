@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>5x5 Color Memory Game</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      background: #222;
+      color: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .game-container {
+      text-align: center;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    .stats {
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(5, 80px);
+      grid-template-rows: repeat(5, 80px);
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .card {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      background: #444;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      font-size: 14px;
+      color: #f5f5f5;
+      transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
+      user-select: none;
+      position: relative;
+    }
+
+    .card.disabled {
+      cursor: default;
+      opacity: 0.4;
+    }
+
+    .card.revealed,
+    .card.matched {
+      color: #111;
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+      transform: scale(1.03);
+    }
+
+    .card.matched {
+      border: 2px solid #fff;
+    }
+
+    .card.free {
+      cursor: default;
+      background: #ffd54f;
+      color: #111;
+      font-size: 16px;
+      box-shadow: 0 0 10px rgba(255, 213, 79, 0.8);
+    }
+
+    button#resetBtn {
+      margin-top: 15px;
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: none;
+      background: #03a9f4;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button#resetBtn:hover {
+      background: #0288d1;
+    }
+
+    .message {
+      margin-top: 10px;
+      min-height: 18px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>5x5 Color Memory Game</h1>
+    <div class="stats">
+      <span id="moves">Moves: 0</span> | 
+      <span id="matches">Matches: 0 / 12</span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <button id="resetBtn">Restart Game</button>
+    <div class="message" id="message"></div>
+  </div>
+
+  <script>
+    // 12 color pairs (24 cards) + 1 always-visible FREE tile (center)
+    const colors = [
+      "#e57373", "#e57373",
+      "#64b5f6", "#64b5f6",
+      "#81c784", "#81c784",
+      "#ffb74d", "#ffb74d",
+      "#ba68c8", "#ba68c8",
+      "#4db6ac", "#4db6ac",
+      "#f06292", "#f06292",
+      "#9575cd", "#9575cd",
+      "#4fc3f7", "#4fc3f7",
+      "#aed581", "#aed581",
+      "#ff8a65", "#ff8a65",
+      "#90a4ae", "#90a4ae"
+    ];
+
+    const gridElement = document.getElementById("grid");
+    const movesElement = document.getElementById("moves");
+    const matchesElement = document.getElementById("matches");
+    const messageElement = document.getElementById("message");
+    const resetBtn = document.getElementById("resetBtn");
+
+    let cards = [];
+    let firstCard = null;
+    let secondCard = null;
+    let lockBoard = false;
+    let moves = 0;
+    let matches = 0;
+    const totalPairs = 12;
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function createBoard() {
+      gridElement.innerHTML = "";
+      cards = [];
+      firstCard = null;
+      secondCard = null;
+      lockBoard = false;
+      moves = 0;
+      matches = 0;
+      updateStats();
+      messageElement.textContent = "";
+
+      // Shuffle the 24 color cards
+      const shuffledColors = shuffle([...colors]);
+
+      // We will place 25 tiles in a 5x5 grid.
+      // Index 12 (center) will be a FREE tile that doesn't participate in matching.
+      let colorIndex = 0;
+
+      for (let i = 0; i < 25; i++) {
+        const card = document.createElement("div");
+        card.classList.add("card");
+
+        if (i === 12) {
+          // Center FREE tile
+          card.classList.add("free", "revealed", "disabled");
+          card.textContent = "FREE";
+          card.dataset.type = "free";
+        } else {
+          const color = shuffledColors[colorIndex++];
+          card.dataset.color = color;
+          card.dataset.type = "color";
+          card.textContent = "";
+          card.addEventListener("click", onCardClick);
+        }
+
+        gridElement.appendChild(card);
+        cards.push(card);
+      }
+    }
+
+    function onCardClick(e) {
+      const card = e.currentTarget;
+
+      if (lockBoard) return;
+      if (card.classList.contains("revealed") || card.classList.contains("matched")) return;
+      if (card.dataset.type !== "color") return;
+
+      revealCard(card);
+
+      if (!firstCard) {
+        firstCard = card;
+        return;
+      }
+
+      if (card === firstCard) return; // ignore double-click on same card
+
+      secondCard = card;
+      moves++;
+      updateStats();
+      checkForMatch();
+    }
+
+    function revealCard(card) {
+      card.classList.add("revealed");
+      card.style.background = card.dataset.color;
+    }
+
+    function hideCard(card) {
+      card.classList.remove("revealed");
+      card.style.background = "#444";
+    }
+
+    function checkForMatch() {
+      const isMatch = firstCard.dataset.color === secondCard.dataset.color;
+
+      if (isMatch) {
+        disableMatchedCards();
+        matches++;
+        updateStats();
+        if (matches === totalPairs) {
+          messageElement.textContent = "You found all the matches! 🎉";
+        }
+        resetTurn();
+      } else {
+        lockBoard = true;
+        setTimeout(() => {
+          hideCard(firstCard);
+          hideCard(secondCard);
+          resetTurn();
+        }, 800);
+      }
+    }
+
+    function disableMatchedCards() {
+      firstCard.classList.add("matched", "disabled");
+      secondCard.classList.add("matched", "disabled");
+      firstCard.removeEventListener("click", onCardClick);
+      secondCard.removeEventListener("click", onCardClick);
+    }
+
+    function resetTurn() {
+      [firstCard, secondCard] = [null, null];
+      lockBoard = false;
+    }
+
+    function updateStats() {
+      movesElement.textContent = `Moves: ${moves}`;
+      matchesElement.textContent = `Matches: ${matches} / ${totalPairs}`;
+    }
+
+    resetBtn.addEventListener("click", createBoard);
+
+    // Initialize
+    createBoard();
+  </script>
+</body>
+</html>
